@@ -18,6 +18,7 @@ defmodule Anubis.Server.Component do
     behaviour_module = get_behaviour_module(type)
 
     title = Keyword.get(opts, :title)
+    meta = Keyword.get(opts, :meta)
 
     uri = Keyword.get(opts, :uri)
     basename = if uri && type == :resource, do: Path.basename(uri)
@@ -47,6 +48,11 @@ defmodule Anubis.Server.Component do
 
       @doc false
       def __description__, do: @moduledoc
+
+      if unquote(meta) do
+        @doc false
+        def __meta__, do: unquote(meta)
+      end
 
       if unquote(type) == :tool do
         if title = unquote(title) do

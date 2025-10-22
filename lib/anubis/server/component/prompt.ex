@@ -92,7 +92,8 @@ defmodule Anubis.Server.Component.Prompt do
           description: String.t() | nil,
           arguments: map | nil,
           handler: module | nil,
-          validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
+          validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
+          meta: map
         }
 
   defstruct [
@@ -101,7 +102,8 @@ defmodule Anubis.Server.Component.Prompt do
     description: nil,
     arguments: nil,
     handler: nil,
-    validate_input: nil
+    validate_input: nil,
+    meta: %{}
   ]
 
   @doc """
@@ -180,6 +182,7 @@ defmodule Anubis.Server.Component.Prompt do
     def encode(%Prompt{} = prompt, _) do
       prompt
       |> Map.take([:name, :description, :arguments])
+      |> then(&if map_size(prompt.meta) > 0, do: Map.put(&1, :_meta, prompt.meta), else: &1)
       |> JSON.encode!()
     end
   end

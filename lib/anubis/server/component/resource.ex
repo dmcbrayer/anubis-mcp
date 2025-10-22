@@ -84,7 +84,8 @@ defmodule Anubis.Server.Component.Resource do
           mime_type: String.t(),
           handler: module | nil,
           title: String.t() | nil,
-          uri_template: String.t() | nil
+          uri_template: String.t() | nil,
+          meta: map
         }
 
   defstruct [
@@ -94,7 +95,8 @@ defmodule Anubis.Server.Component.Resource do
     mime_type: "text/plain",
     handler: nil,
     title: nil,
-    uri_template: nil
+    uri_template: nil,
+    meta: %{}
   ]
 
   @doc """
@@ -177,6 +179,7 @@ defmodule Anubis.Server.Component.Resource do
       |> then(&if resource.title, do: Map.put(&1, :title, resource.title), else: &1)
       |> then(&if resource.description, do: Map.put(&1, :description, resource.description), else: &1)
       |> then(&if resource.mime_type, do: Map.put(&1, :mimeType, resource.mime_type), else: &1)
+      |> then(&if map_size(resource.meta) > 0, do: Map.put(&1, :_meta, resource.meta), else: &1)
       |> JSON.encode!()
     end
 
@@ -184,6 +187,7 @@ defmodule Anubis.Server.Component.Resource do
       resource
       |> Map.take([:name, :uri, :description, :title])
       |> Map.put(:mimeType, resource.mime_type)
+      |> then(&if map_size(resource.meta) > 0, do: Map.put(&1, :_meta, resource.meta), else: &1)
       |> JSON.encode!()
     end
   end

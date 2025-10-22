@@ -71,6 +71,7 @@ defmodule Anubis.Server.Component.Tool do
           input_schema: map | nil,
           output_schema: map | nil,
           annotations: map | nil,
+          meta: map,
           handler: module | nil,
           validate_input: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil,
           validate_output: (map -> {:ok, map} | {:error, [Peri.Error.t()]}) | nil
@@ -83,6 +84,7 @@ defmodule Anubis.Server.Component.Tool do
     input_schema: nil,
     output_schema: nil,
     annotations: nil,
+    meta: %{},
     handler: nil,
     validate_input: nil,
     validate_output: nil
@@ -184,6 +186,7 @@ defmodule Anubis.Server.Component.Tool do
       |> then(&if t = tool.title, do: Map.put(&1, "title", t), else: &1)
       |> then(&if os = tool.output_schema, do: Map.put(&1, "outputSchema", os), else: &1)
       |> then(&if a = tool.annotations, do: Map.put(&1, "annotations", a), else: &1)
+      |> then(&if map_size(tool.meta) > 0, do: Map.put(&1, "_meta", tool.meta), else: &1)
       |> JSON.encode!()
     end
   end

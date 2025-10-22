@@ -433,6 +433,7 @@ defmodule Anubis.Server.Frame do
 
     annotations = opts[:annotations]
     title = annotations[:title] || annotations["title"] || opts[:title] || name
+    meta = opts[:meta] || %{}
 
     update_components(frame, %Tool{
       name: name,
@@ -440,6 +441,7 @@ defmodule Anubis.Server.Frame do
       input_schema: Schema.to_json_schema(input_schema),
       output_schema: if(output_schema, do: Schema.to_json_schema(output_schema)),
       annotations: annotations,
+      meta: meta,
       title: title,
       validate_input: validate_input,
       validate_output: validate_output
@@ -456,12 +458,14 @@ defmodule Anubis.Server.Frame do
     raw_schema = Component.__clean_schema_for_peri__(arguments)
     validate_input = fn params -> Peri.validate(raw_schema, params) end
     title = opts[:title] || name
+    meta = opts[:meta] || %{}
 
     update_components(frame, %Prompt{
       name: name,
       title: title,
       description: opts[:description],
       arguments: Schema.to_prompt_arguments(arguments),
+      meta: meta,
       validate_input: validate_input
     })
   end
@@ -477,13 +481,15 @@ defmodule Anubis.Server.Frame do
                | {:mime_type, String.t() | nil}
   def register_resource(%__MODULE__{} = frame, uri, opts) when is_binary(uri) do
     name = opts[:name] || Path.basename(uri)
+    meta = opts[:meta] || %{}
 
     update_components(frame, %Resource{
       uri: uri,
       title: opts[:title] || name,
       name: name,
       description: opts[:description],
-      mime_type: opts[:mime_type] || "text/plain"
+      mime_type: opts[:mime_type] || "text/plain",
+      meta: meta
     })
   end
 

@@ -535,6 +535,7 @@ defmodule Anubis.Server do
     output_schema = if Anubis.exported?(mod, :output_schema, 0), do: mod.output_schema()
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
     title = determine_tool_title(annotations, title)
+    meta = if Anubis.exported?(mod, :__meta__, 0), do: mod.__meta__(), else: %{}
 
     validate_output =
       if output_schema do
@@ -560,6 +561,7 @@ defmodule Anubis.Server do
           input_schema: mod.input_schema(),
           output_schema: output_schema,
           annotations: annotations,
+          meta: meta,
           handler: mod,
           validate_input: validate_input,
           validate_output: validate_output
@@ -572,6 +574,7 @@ defmodule Anubis.Server do
 
   def parse_components({:prompt, name, mod}) do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+    meta = if Anubis.exported?(mod, :__meta__, 0), do: mod.__meta__(), else: %{}
 
     if Anubis.exported?(mod, :arguments, 0) do
       validate_input = fn params ->
@@ -586,6 +589,7 @@ defmodule Anubis.Server do
           title: title,
           description: Component.get_description(mod),
           arguments: mod.arguments(),
+          meta: meta,
           handler: mod,
           validate_input: validate_input
         }
@@ -597,6 +601,7 @@ defmodule Anubis.Server do
 
   def parse_components({:resource, name, mod}) do
     title = if Anubis.exported?(mod, :title, 0), do: mod.title(), else: name
+    meta = if Anubis.exported?(mod, :__meta__, 0), do: mod.__meta__(), else: %{}
 
     if Anubis.exported?(mod, :uri, 0) do
       [
@@ -606,6 +611,7 @@ defmodule Anubis.Server do
           title: title,
           description: Component.get_description(mod),
           mime_type: mod.mime_type(),
+          meta: meta,
           handler: mod
         }
       ]
