@@ -34,7 +34,8 @@ defmodule Anubis.Server.Response do
           hasMore: boolean,
           isError: boolean,
           structured_content: map | nil,
-          metadata: map
+          metadata: map,
+          meta: map
         }
 
   @type annotations ::
@@ -54,7 +55,8 @@ defmodule Anubis.Server.Response do
     hasMore: false,
     isError: false,
     structured_content: nil,
-    metadata: %{}
+    metadata: %{},
+    meta: %{}
   ]
 
   @doc """
@@ -142,14 +144,20 @@ defmodule Anubis.Server.Response do
   def text(r, text, opts \\ [])
 
   def text(%{type: :tool} = r, text, opts) when is_binary(text) do
-    content = %{"type" => "text", "text" => text}
-    content = maybe_add_annotations(content, opts[:annotations])
+    content =
+      %{"type" => "text", "text" => text}
+      |> maybe_add_annotations(opts[:annotations])
+      |> maybe_add_meta(opts[:meta])
+
     add_content(r, content)
   end
 
   def text(%{type: :resource} = r, text, opts) when is_binary(text) do
-    contents = %{"text" => text}
-    contents = maybe_add_annotations(contents, opts[:annotations])
+    contents =
+      %{"text" => text}
+      |> maybe_add_annotations(opts[:annotations])
+      |> maybe_add_meta(opts[:meta])
+
     %{r | contents: contents}
   end
 
@@ -233,8 +241,11 @@ defmodule Anubis.Server.Response do
   """
   @spec image(t(), blob :: binary, mime_type :: String.t(), annotations) :: t
   def image(%{type: :tool} = r, data, mime_type, opts \\ []) when is_binary(data) and is_binary(mime_type) do
-    content = %{"type" => "image", "data" => data, "mimeType" => mime_type}
-    content = maybe_add_annotations(content, opts[:annotations])
+    content =
+      %{"type" => "image", "data" => data, "mimeType" => mime_type}
+      |> maybe_add_annotations(opts[:annotations])
+      |> maybe_add_meta(opts[:meta])
+
     add_content(r, content)
   end
 
@@ -279,7 +290,11 @@ defmodule Anubis.Server.Response do
         do: Map.put(content, "transcription", opts[:transcription]),
         else: content
 
-    content = maybe_add_annotations(content, opts[:annotations])
+    content =
+      content
+      |> maybe_add_annotations(opts[:annotations])
+      |> maybe_add_meta(opts[:meta])
+
     add_content(r, content)
   end
 
@@ -317,7 +332,10 @@ defmodule Anubis.Server.Response do
       |> maybe_put("blob", opts[:blob])
 
     resource = maybe_add_annotations(resource, opts[:annotations])
-    add_content(r, %{"type" => "resource", "resource" => resource})
+
+    content = %{"type" => "resource", "resource" => resource}
+    content = maybe_add_meta(content, opts[:meta])
+    add_content(r, content)
   end
 
   @doc """
@@ -366,6 +384,7 @@ defmodule Anubis.Server.Response do
       |> maybe_put("mimeType", opts[:mime_type])
       |> maybe_put("size", opts[:size])
       |> maybe_add_annotations(opts[:annotations])
+      |> maybe_add_meta(opts[:meta])
 
     add_content(r, content)
   end
@@ -532,6 +551,39 @@ defmodule Anubis.Server.Response do
   end
 
   @doc """
+  Set metadata for any response type.
+
+  The `_meta` field allows attaching additional metadata to responses according to
+  the MCP specification. This can be used for progress tracking, custom metadata,
+  and other protocol-level information.
+
+  ## Parameters
+
+    * `response` - Any response struct
+    * `meta_map` - A map of metadata to attach (will be merged with existing _meta)
+
+  ## Examples
+
+      iex> Response.tool()
+      ...> |> Response.text("Result")
+      ...> |> Response.meta(%{"progressToken" => "abc123"})
+      %Response{
+        type: :tool,
+        content: [%{"type" => "text", "text" => "Result"}],
+        meta: %{"progressToken" => "abc123"}
+      }
+
+      iex> Response.resource()
+      ...> |> Response.text("Content")
+      ...> |> Response.meta(%{"custom/key" => "value"})
+      %Response{type: :resource, meta: %{"custom/key" => "value"}}
+  """
+  @spec meta(t(), map()) :: t()
+  def meta(%__MODULE__{} = r, meta_map) when is_map(meta_map) do
+    %{r | meta: Map.merge(r.meta, meta_map)}
+  end
+
+  @doc """
   Add a completion value to a completion response.
 
   ## Parameters
@@ -654,27 +706,22 @@ defmodule Anubis.Server.Response do
   """
   @spec to_protocol(t) :: map
   def to_protocol(%{type: :tool} = r) do
-    base = %{"content" => r.content, "isError" => r.isError}
-
-    if r.structured_content,
-      do: Map.put(base, "structuredContent", r.structured_content),
-      else: base
+    %{"content" => r.content, "isError" => r.isError}
+    |> maybe_put("structuredContent", r.structured_content)
+    |> maybe_add_meta(r.meta)
   end
 
   def to_protocol(%{type: :prompt} = r) do
-    base = %{"messages" => r.messages}
-
-    if Map.get(r, :description),
-      do: Map.put(base, "description", r.description),
-      else: base
+    %{"messages" => r.messages}
+    |> then(fn base -> if Map.get(r, :description), do: Map.put(base, "description", r.description), else: base end)
+    |> maybe_add_meta(r.meta)
   end
 
   def to_protocol(%{type: :completion} = r) do
-    base = %{"values" => r.values}
-
-    base
+    %{"values" => r.values}
     |> maybe_put("total", r.total)
     |> then(fn map -> if r.hasMore, do: Map.put(map, "hasMore", true), else: map end)
+    |> maybe_add_meta(r.meta)
   end
 
   def to_protocol(%{type: :resource} = r, uri, mime_type) do
@@ -685,6 +732,7 @@ defmodule Anubis.Server.Response do
     |> Map.merge(string_metadata)
     |> Map.put("uri", uri)
     |> Map.put("mimeType", mime_type)
+    |> maybe_add_meta(r.meta)
   end
 
   defp add_content(r, content), do: %{r | content: r.content ++ [content]}
@@ -714,4 +762,10 @@ defmodule Anubis.Server.Response do
     |> Map.delete(:last_modified)
     |> then(fn a -> Map.put(map, "annotations", a) end)
   end
+
+  defp maybe_add_meta(map, meta) when is_map(meta) and map_size(meta) > 0 do
+    Map.put(map, "_meta", meta)
+  end
+
+  defp maybe_add_meta(map, _), do: map
 end

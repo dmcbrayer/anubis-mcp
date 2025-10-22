@@ -493,4 +493,309 @@ defmodule Anubis.Server.ResponseTest do
              }
     end
   end
+
+  describe "meta functionality" do
+    test "adds _meta to tool response" do
+      result =
+        Response.tool()
+        |> Response.text("Result")
+        |> Response.meta(%{"progressToken" => "abc123"})
+        |> Response.to_protocol()
+
+      assert result == %{
+               "content" => [%{"type" => "text", "text" => "Result"}],
+               "isError" => false,
+               "_meta" => %{"progressToken" => "abc123"}
+             }
+    end
+
+    test "adds _meta to resource response" do
+      result =
+        Response.resource()
+        |> Response.text("Content")
+        |> Response.meta(%{"version" => "1.0", "lastModified" => "2025-01-15T10:30:00Z"})
+        |> Response.to_protocol("file://test.txt", "text/plain")
+
+      assert result == %{
+               "text" => "Content",
+               "uri" => "file://test.txt",
+               "mimeType" => "text/plain",
+               "_meta" => %{"version" => "1.0", "lastModified" => "2025-01-15T10:30:00Z"}
+             }
+    end
+
+    test "merges multiple meta calls" do
+      result =
+        Response.tool()
+        |> Response.text("Result")
+        |> Response.meta(%{"key1" => "value1"})
+        |> Response.meta(%{"key2" => "value2"})
+        |> Response.to_protocol()
+
+      assert result == %{
+               "content" => [%{"type" => "text", "text" => "Result"}],
+               "isError" => false,
+               "_meta" => %{"key1" => "value1", "key2" => "value2"}
+             }
+    end
+
+    test "later meta values override earlier ones with same key" do
+      result =
+        Response.tool()
+        |> Response.text("Result")
+        |> Response.meta(%{"key" => "first"})
+        |> Response.meta(%{"key" => "second"})
+        |> Response.to_protocol()
+
+      assert result["_meta"]["key"] == "second"
+    end
+
+    test "does not include _meta when empty for tool response" do
+      result =
+        Response.tool()
+        |> Response.text("Result")
+        |> Response.to_protocol()
+
+      refute Map.has_key?(result, "_meta")
+    end
+
+    test "does not include _meta when empty for resource response" do
+      result =
+        Response.resource()
+        |> Response.text("Content")
+        |> Response.to_protocol("file://test.txt", "text/plain")
+
+      refute Map.has_key?(result, "_meta")
+    end
+
+    test "works with structured content" do
+      result =
+        Response.tool()
+        |> Response.structured(%{temperature: 22.5})
+        |> Response.meta(%{"progressToken" => "xyz"})
+        |> Response.to_protocol()
+
+      assert %{
+               "content" => [%{"type" => "text", "text" => _}],
+               "structuredContent" => %{temperature: 22.5},
+               "isError" => false,
+               "_meta" => %{"progressToken" => "xyz"}
+             } = result
+    end
+
+    test "works with error responses" do
+      result =
+        Response.tool()
+        |> Response.error("Something went wrong")
+        |> Response.meta(%{"errorCode" => "E001"})
+        |> Response.to_protocol()
+
+      assert result == %{
+               "content" => [%{"type" => "text", "text" => "Something went wrong"}],
+               "isError" => true,
+               "_meta" => %{"errorCode" => "E001"}
+             }
+    end
+
+    test "supports complex meta values" do
+      meta_data = %{
+        "progressToken" => "token123",
+        "customNamespace/key" => "value",
+        "nested" => %{"deep" => "structure"}
+      }
+
+      result =
+        Response.tool()
+        |> Response.text("Result")
+        |> Response.meta(meta_data)
+        |> Response.to_protocol()
+
+      assert result["_meta"] == meta_data
+    end
+
+    test "meta persists through multiple content additions" do
+      result =
+        Response.tool()
+        |> Response.meta(%{"token" => "abc"})
+        |> Response.text("First")
+        |> Response.text("Second")
+        |> Response.image("data", "image/png")
+        |> Response.to_protocol()
+
+      assert result["_meta"] == %{"token" => "abc"}
+
+      assert length(result["content"]) == 3
+    end
+  end
+
+  describe "content-level _meta" do
+    test "adds _meta to text content in tool response" do
+      result =
+        Response.tool()
+        |> Response.text("Hello", meta: %{"step" => 1})
+        |> Response.to_protocol()
+
+      assert result["content"] == [
+               %{
+                 "type" => "text",
+                 "text" => "Hello",
+                 "_meta" => %{"step" => 1}
+               }
+             ]
+    end
+
+    test "adds _meta to text content in resource response" do
+      result =
+        Response.resource()
+        |> Response.text("Content", meta: %{"version" => "1.0"})
+        |> Response.to_protocol("file://test.txt", "text/plain")
+
+      assert result["text"] == "Content"
+      assert result["_meta"] == %{"version" => "1.0"}
+    end
+
+    test "adds _meta to image content" do
+      result =
+        Response.tool()
+        |> Response.image("base64data", "image/png", meta: %{"generated" => true})
+        |> Response.to_protocol()
+
+      assert result["content"] == [
+               %{
+                 "type" => "image",
+                 "data" => "base64data",
+                 "mimeType" => "image/png",
+                 "_meta" => %{"generated" => true}
+               }
+             ]
+    end
+
+    test "adds _meta to audio content" do
+      result =
+        Response.tool()
+        |> Response.audio("audiodata", "audio/wav",
+          transcription: "Hello",
+          meta: %{"quality" => "high"}
+        )
+        |> Response.to_protocol()
+
+      assert result["content"] == [
+               %{
+                 "type" => "audio",
+                 "data" => "audiodata",
+                 "mimeType" => "audio/wav",
+                 "transcription" => "Hello",
+                 "_meta" => %{"quality" => "high"}
+               }
+             ]
+    end
+
+    test "adds _meta to embedded resource" do
+      result =
+        Response.tool()
+        |> Response.embedded_resource("file://example.txt",
+          name: "Example",
+          mime_type: "text/plain",
+          text: "Contents",
+          meta: %{"cached" => true}
+        )
+        |> Response.to_protocol()
+
+      assert [content] = result["content"]
+      assert content["type"] == "resource"
+      assert content["_meta"] == %{"cached" => true}
+      assert content["resource"]["uri"] == "file://example.txt"
+    end
+
+    test "adds _meta to resource link" do
+      result =
+        Response.tool()
+        |> Response.resource_link("file://main.rs", "main.rs",
+          title: "Main File",
+          meta: %{"priority" => "high"}
+        )
+        |> Response.to_protocol()
+
+      assert result["content"] == [
+               %{
+                 "type" => "resource_link",
+                 "uri" => "file://main.rs",
+                 "name" => "main.rs",
+                 "title" => "Main File",
+                 "_meta" => %{"priority" => "high"}
+               }
+             ]
+    end
+
+    test "supports both annotations and _meta on same content" do
+      result =
+        Response.tool()
+        |> Response.text("Hello",
+          annotations: %{audience: ["user"], priority: 0.8},
+          meta: %{"step" => 1}
+        )
+        |> Response.to_protocol()
+
+      assert [content] = result["content"]
+      assert content["_meta"] == %{"step" => 1}
+      assert content["annotations"][:audience] == ["user"]
+      assert content["annotations"][:priority] == 0.8
+    end
+
+    test "empty _meta is not included in output" do
+      result =
+        Response.tool()
+        |> Response.text("Hello", meta: %{})
+        |> Response.to_protocol()
+
+      assert result["content"] == [
+               %{"type" => "text", "text" => "Hello"}
+             ]
+
+      refute Map.has_key?(hd(result["content"]), "_meta")
+    end
+
+    test "nil _meta is not included in output" do
+      result =
+        Response.tool()
+        |> Response.text("Hello", meta: nil)
+        |> Response.to_protocol()
+
+      assert result["content"] == [
+               %{"type" => "text", "text" => "Hello"}
+             ]
+
+      refute Map.has_key?(hd(result["content"]), "_meta")
+    end
+
+    test "supports different _meta on multiple content items" do
+      result =
+        Response.tool()
+        |> Response.text("Step 1", meta: %{"step" => 1, "duration" => 100})
+        |> Response.text("Step 2", meta: %{"step" => 2, "duration" => 200})
+        |> Response.image("data", "image/png", meta: %{"generated" => true})
+        |> Response.to_protocol()
+
+      assert [text1, text2, image] = result["content"]
+
+      assert text1["_meta"] == %{"step" => 1, "duration" => 100}
+      assert text2["_meta"] == %{"step" => 2, "duration" => 200}
+      assert image["_meta"] == %{"generated" => true}
+    end
+
+    test "content-level and response-level _meta are independent" do
+      result =
+        Response.tool()
+        |> Response.text("Content", meta: %{"content_id" => "c1"})
+        |> Response.meta(%{"session_id" => "s1"})
+        |> Response.to_protocol()
+
+      # Response-level _meta
+      assert result["_meta"] == %{"session_id" => "s1"}
+
+      # Content-level _meta
+      assert [content] = result["content"]
+      assert content["_meta"] == %{"content_id" => "c1"}
+    end
+  end
 end
